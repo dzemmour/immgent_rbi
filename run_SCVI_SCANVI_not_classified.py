@@ -2,7 +2,7 @@
 """This script run TOTALVI from a Mudata object specifying batch_key and categorical_covariate_keys if needed, """
 #author: David Zemmour
 #date: 10/08/2024
-#run_totalvi_v2.py [cwd] [path to anndata .h5ad] [metadata_query] [prefix] [batchkey] [categorical_covariate_keys] [corrected_counts] [denoised_data]
+#run_totalvi_v2.py [cwd] [path to mudata .h5mu] [prefix] [batchkey] [categorical_covariate_keys] [corrected_counts] [denoised_data]
 
 import warnings; warnings.simplefilter('ignore')
 import argparse
@@ -153,14 +153,14 @@ print("Train new SCVI model")
 
 ## add final classifications from medata query
 metadata_query = pd.read_csv(metadata_query_path, delimiter = ",", index_col=0)
-print("metadata_query shape: ",  metadata_query.shape)
-print("mdata: ")
+print("metadata_query shape pre filter: ",  metadata_query.shape)
+print("mdata pre filter: ")
 print(mdata)
 common_idx = mdata.obs_names.intersection(metadata_query.index)
 mdata = mdata[common_idx, :].copy()
 metadata_query = metadata_query.loc[common_idx]
-print("metadata_query shape: ",  metadata_query.shape)
-print("mdata: ")
+print("metadata_query shape post filter: ",  metadata_query.shape)
+print("mdata post filter: ")
 print(mdata)
 mdata.obs.loc[metadata_query.index, 'level1_C_scANVI'] = metadata_query.loc[metadata_query.index, 'level1_C_scANVI'].values
 mdata.obs.loc[metadata_query.index, 'level1_scanvi_confidence'] = metadata_query.loc[metadata_query.index, 'level1_scanvi_confidence'].values
@@ -207,7 +207,7 @@ while ((percentage > 1) and (difference > 1.5)):
   
   ## Separate gdT and abT mdata
   abT_mdata = mdata[mdata.obs['level1_final'].astype(str) != "gdT" , :].copy()
-  gdT_mdata = mdata[mdata.obs['level1_final'] == "gdT" ,:].copy()
+  gdT_mdata = mdata[mdata.obs['level1_final'].astype(str) == "gdT" ,:].copy()
 
   ## Train separate SCVI models for gdT and abT
   ## abT
@@ -220,24 +220,6 @@ while ((percentage > 1) and (difference > 1.5)):
   #except NameError:
   # model does not exist — run your code
   # Comment if already trained
-  print("LABELS - abT_mdata:")
-  print(abT_mdata.obs["level2"].value_counts())
-  
-  print("\nBATCHES - abT_mdata:")
-  print(abT_mdata.obs[batchkey].value_counts())
-  
-  print("\nCOVARIATES - abT_mdata:")
-  #for cov in categorical_covariate_keys:
-  #    print(cov)
-  #    print(abT_mdata.obs[cov].value_counts())
-  df_counts_abT = abT_mdata.obs[categorical_covariate_keys].value_counts()
-  single_values = df_counts_abT[df_counts_abT == 1].index.tolist()
-  abT_mdata.obs["IGTHT"] = abT_mdata.obs["IGTHT"].astype("category").cat.add_categories("merged_batch_ref")
-  abT_mdata.obs.loc[abT_mdata.obs["IGTHT"].isin(single_values), "IGTHT"] = "merged_batch_ref"
-  
-  print("\nCOVARIATES Singletons:")
-  print(single_values)
-
   scvi.model.SCVI.setup_anndata(abT_mdata, layer = "counts", batch_key = batchkey, categorical_covariate_keys = categorical_covariate_keys)
   scvi_model_abT = scvi.model.SCVI(abT_mdata, n_latent=30, n_layers=2)
   scvi_model_abT.train(100)
@@ -275,28 +257,11 @@ while ((percentage > 1) and (difference > 1.5)):
   # model does not exist — run your code
   # Comment if already trained
   if gdT_mdata.obs.shape[0] > 1 :
-    print("LABELS - abT_mdata:")
-    print(abT_mdata.obs["level2"].value_counts())
-    
-    print("\nBATCHES - abT_mdata:")
-    print(abT_mdata.obs[batchkey].value_counts())
-    
-    print("\nCOVARIATES - abT_mdata:")
-    #for cov in categorical_covariate_keys:
-    #    print(cov)
-    #    print(abT_mdata.obs[cov].value_counts())
-    df_counts_abT = abT_mdata.obs[categorical_covariate_keys].value_counts()
-    single_values = df_counts_abT[df_counts_abT == 1].index.tolist()
-    abT_mdata.obs["IGTHT"] = abT_mdata.obs["IGTHT"].astype("category").cat.add_categories("merged_batch_ref")
-    abT_mdata.obs.loc[abT_mdata.obs["IGTHT"].isin(single_values), "IGTHT"] = "merged_batch_ref"
-    
-    print("\nCOVARIATES Singletons:")
-    print(single_values)
-    scvi.model.SCVI.setup_anndata(gdT_mdata, layer = "counts", batch_key = batchkey, categorical_covariate_keys = categorical_covariate_keys)
-    scvi_model_gdT = scvi.model.SCVI(gdT_mdata, n_latent=30, n_layers=2)
-    scvi_model_gdT.train(100)
-    #scvi_model_gdT.save(prefix+"/scvi_model_gdT_not_classified/", save_anndata=True)
-    #scvi_model_gdT = scvi.model.SCVI.load(prefix+"/scvi_model_gdT_not_classified/", adata=gdT_mdata)
+      scvi.model.SCVI.setup_anndata(gdT_mdata, layer = "counts", batch_key = batchkey, categorical_covariate_keys = categorical_covariate_keys)
+      scvi_model_gdT = scvi.model.SCVI(gdT_mdata, n_latent=30, n_layers=2)
+      scvi_model_gdT.train(100)
+      #scvi_model_gdT.save(prefix+"/scvi_model_gdT_not_classified/", save_anndata=True)
+      #scvi_model_gdT = scvi.model.SCVI.load(prefix+"/scvi_model_gdT_not_classified/", adata=gdT_mdata)
 
 
   ## gdT
@@ -552,25 +517,32 @@ while ((percentage > 1) and (difference > 1.5)):
       LEVEL2_SCANVI_LATENT_KEY = "level2_X_scANVI"
       LEVEL2_SCANVI_PREDICTIONS_KEY = "level2_C_scANVI"
 
-      ##gdT_mdata.obsm[SCVI_LATENT_KEY] = scvi_model.get_latent_representation(gdT_mdata)
-      gdT_mdata.obsm[LEVEL2_SCANVI_LATENT_KEY] = level2_model_gdT.get_latent_representation(gdT_mdata)
-      gdT_mdata.obs[LEVEL2_SCANVI_PREDICTIONS_KEY]= level2_model_gdT.predict(gdT_mdata)
-      gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY] = gdT_mdata.obs[LEVEL2_SCANVI_PREDICTIONS_KEY]
-      #level2_gdT_latent_df = pd.DataFrame(gdT_mdata.obsm[LEVEL2_SCANVI_LATENT_KEY], index = gdT_mdata.obs.index)
-      #level2_gdT_latent_df.to_csv(prefix+"/latent_level2_gdT.csv", index=True)
+      #try level2_model_gdT:
+      if level2_model_gdT is not None:
+          ##gdT_mdata.obsm[SCVI_LATENT_KEY] = scvi_model.get_latent_representation(gdT_mdata)
+          gdT_mdata.obsm[LEVEL2_SCANVI_LATENT_KEY] = level2_model_gdT.get_latent_representation(gdT_mdata)
+          gdT_mdata.obs[LEVEL2_SCANVI_PREDICTIONS_KEY]= level2_model_gdT.predict(gdT_mdata)
+          gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY] = gdT_mdata.obs[LEVEL2_SCANVI_PREDICTIONS_KEY]
+          #level2_gdT_latent_df = pd.DataFrame(gdT_mdata.obsm[LEVEL2_SCANVI_LATENT_KEY], index = gdT_mdata.obs.index)
+          #level2_gdT_latent_df.to_csv(prefix+"/latent_level2_gdT.csv", index=True)
 
-      ## Get posterior probabilities for all labels
-      gdT_level2_probs = level2_model_gdT.predict(gdT_mdata, soft=True)
+          ## Get posterior probabilities for all labels
+          gdT_level2_probs = level2_model_gdT.predict(gdT_mdata, soft=True)
+          ## Get max probability per cell (i.e., model confidence)
+          gdT_level2_confidence = gdT_level2_probs.max(axis=1)
+          ## Add to AnnData
+          gdT_output_file["level2_scanvi_confidence"] = gdT_level2_confidence
+          ##gdT_output_file.to_csv(prefix_SCANVI+"/predicted_celltypes.csv")
+          ## Add final annotation  with unclear below a threshold
+          gdT_output_file["level2_final"] = gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY]
+          gdT_output_file.loc[gdT_output_file["level2_scanvi_confidence"] < confidence_threshold, "level2_final"] = "not classified"
 
-      ## Get max probability per cell (i.e., model confidence)
-      gdT_level2_confidence = gdT_level2_probs.max(axis=1)
-      ## Add to AnnData
-      gdT_output_file["level2_scanvi_confidence"] = gdT_level2_confidence
-      ##gdT_output_file.to_csv(prefix_SCANVI+"/predicted_celltypes.csv")
-
-      ## Add final annotation  with unclear below a threshold
-      gdT_output_file["level2_final"] = gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY]
-      gdT_output_file.loc[gdT_output_file["level2_scanvi_confidence"] < confidence_threshold, "level2_final"] = "not classified"
+      #except NameError:
+      else:
+          gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY] = "not classified"
+          gdT_output_file["level2_scanvi_confidence"] = 0
+          gdT_output_file["level2_final"] = gdT_output_file[LEVEL2_SCANVI_PREDICTIONS_KEY]
+          #gdT_output_file.loc[gdT_output_file["level2_scanvi_confidence"] < confidence_threshold, "level2_final"] = "not classified"
 
       ## combine two output files
       output_file = pd.concat([abT_output_file, gdT_output_file], axis=0)
@@ -578,6 +550,22 @@ while ((percentage > 1) and (difference > 1.5)):
   else:
       output_file = abT_output_file
 
+  ## Set not classified based on level1 and level2 classifications
+  ## Get unique level2_C_scANVI groups, excluding some
+  groups2 = sorted(output_file["level2_C_scANVI"].unique())
+  groups2 = [g for g in groups2 if g not in ["unclear", "nonT", "remove"]]
+  #groups2 = [g for g in groups2 if g not in ["unclear"]]
+
+  
+  #for annot2 in groups2:
+    #mask2 = (output_file["level1_final"] == "not classified") & (output_file["level2_final"] == annot)
+    #output_file.loc[mask1, "level1_final"] = annot.split("_")[0]
+
+   # mask2 = (output_file["level2_final"] == annot2)
+   # output_file.loc[mask2, "level1_final"] = annot2.split("_")[0]
+
+  #mdata.obs.loc[output_file.index, ["level1_final", "level2_final"]] = output_file.loc[output_file.index, ["level1_final", "level2_final"]]
+  
   percentage_new = (output_file["level2_final"].eq("not classified").sum() / len(output_file.index)) * 100
   difference = (percentage/percentage_new)
   percentage = percentage_new
@@ -588,7 +576,7 @@ while ((percentage > 1) and (difference > 1.5)):
   # Only apply predictions that reduce NC or are high-confidence non-NC
   overlap = output_file.index.intersection(mdata.obs.index)
 
-  ## candidates that convert not classified to a class
+  ## candidates that convert NC to class
   ## level1
   convert_level1 = overlap[
       (mdata.obs.loc[overlap,"level1_final"]=="not classified") &
@@ -613,16 +601,14 @@ while ((percentage > 1) and (difference > 1.5)):
   output_file = mdata.obs[["level1_C_scANVI", "level1_scanvi_confidence", "level1_final", "level2_C_scANVI", "level2_scanvi_confidence", "level2_final"]]
 
   #mdata.obs[["level1_final", "level2_final"]] = output_file[["level1_final", "level2_final"]]
-  #mdata.obs.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]] = output_file.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]
-  
-  ## Set not classified based on level1 and level2 classifications
-  ## Get unique level2_C_scANVI groups, excluding some
+  #mdata.obs.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]] = output_file.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]]
+
   groups2 = sorted(output_file["level2_C_scANVI"].unique())
   groups2 = [g for g in groups2 if g not in ["unclear", "nonT", "remove"]]
   
   for annot2 in groups2:
-    ##mask2 = (output_file["level1_final"] == "not classified") & (output_file["level2_final"] == annot)
-    ##output_file.loc[mask1, "level1_final"] = annot.split("_")[0]
+    #mask2 = (output_file["level1_final"] == "not classified") & (output_file["level2_final"] == annot)
+    #output_file.loc[mask1, "level1_final"] = annot.split("_")[0]
 
     mask2 = (output_file["level2_final"] == annot2)
     output_file.loc[mask2, "level1_final"] = annot2.split("_")[0]
@@ -638,11 +624,14 @@ while ((percentage > 1) and (difference > 1.5)):
   del abT_mdata
 
 
-level1_model_abT.save(prefix+"/abT_scanvi_level1_model_not_classified/", save_anndata=False)
-level2_model_abT.save(prefix+"/abT_scanvi_level2_model_not_classified/", save_anndata=False)
+if level1_model_abT is not None:
+    level1_model_abT.save(prefix+"/abT_scanvi_level1_model_not_classified/", save_anndata=False)
+
+if level2_model_abT is not None:
+    level2_model_abT.save(prefix+"/abT_scanvi_level2_model_not_classified/", save_anndata=False)
 
 gdT_mdata = mdata[mdata.obs['level1_final'] == "gdT" ,:].copy()
-if gdT_mdata.obs.shape[0] > 1 :
+if level2_model_gdT is not None:
     level2_model_gdT.save(prefix+"/gdT_scanvi_level2_model_not_classified/", save_anndata=False)
 
 groups1 = sorted(output_file["level1_C_scANVI"].dropna().unique())

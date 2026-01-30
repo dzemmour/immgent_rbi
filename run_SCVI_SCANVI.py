@@ -9,10 +9,10 @@ import argparse
 parser = argparse.ArgumentParser(description="run TOTALVI from a MuData object specifying batch_key and categorical_covariate_keys if needed, can also return corrected counts and denoised data")
 parser.add_argument('--working_dir', help='Working directory')
 parser.add_argument('--path_to_ImmgenT', help='Path to ImmgenT MuData object')
-parser.add_argument('--path_to_query', help='Path to query MuData object')
-parser.add_argument('--path_to_anndata', help='Path to combined AnnData object')
+parser.add_argument('--path_to_matrix', help='Path to query matrix')
 parser.add_argument('--path_to_spikein', help='Path to combined AnnData object')
-parser.add_argument('--prefix', default='myprefix', 
+parser.add_argument('--query_sample_path', help='Path to query sample table')
+parser.add_argument('--prefix', default='myprefix',
                     help='Prefix for the output files (default: myprefix)')
 parser.add_argument('--batchkey', default=None, help='Batch key for analysis')
 parser.add_argument('--categorical_covariate_keys', default=None, help='categorical_covariate_keys variables (default: None)')
@@ -25,9 +25,10 @@ print("Arguments")
 args = parser.parse_args()
 working_dir = args.working_dir
 path_to_ImmgenT = args.path_to_ImmgenT
+path_to_matrix = args.path_to_matrix
 path_to_spikein = args.path_to_spikein
+query_sample_path = args.query_sample_path
 #path_to_query = args.path_to_query
-path_to_anndata = args.path_to_anndata
 prefix = args.prefix
 batchkey = args.batchkey
 #confoundings = args.confoundings
@@ -41,7 +42,6 @@ corrected_counts = args.corrected_counts
 denoised_data = args.denoised_data
 #mde_ref_file = args.mde_ref_file
 #latent_key = args.latent_key
-
 # working_dir = '/project/jfkfloor2/zemmourlab/david/immgent/analysis/integration/IGT1_56/'
 # path_to_mudata = '/project/jfkfloor2/zemmourlab/david/immgent/analysis/integration/IGT1_56/export_data/totalvi_igt1_56_20231030_allgenes_mdata.h5mu'
 # prefix = 'totalvi_igt1_56_allgenes_20240526_igtsampleregressedout'
@@ -59,8 +59,10 @@ denoised_data = args.denoised_data
 
 print(f"Working Directory: {working_dir}")
 print(f"Path to ImmgenT AnnData: {path_to_ImmgenT}")
+print(f"Path to matrix: {path_to_matrix}")
+print(f"Path to spike-in AnnData: {path_to_spikein}")
 #print(f"Path to query AnnData: {path_to_query}")
-print(f"Path to combined AnnData: {path_to_anndata}")
+#print(f"Path to combined AnnData: {path_to_anndata}")
 print(f"Prefix: {prefix}")
 print(f"Batch Key: {batchkey}")
 print(f"categorical_covariate_keys: {categorical_covariate_keys}")
@@ -80,6 +82,8 @@ import mudata as mu
 import anndata as AnnData
 import numpy as np
 #import mplscience
+import scipy
+import scipy.io
 from scipy.sparse import csc_matrix
 import matplotlib.pyplot as plt
 import pickle
@@ -91,6 +95,7 @@ import pymde #to run MDE
 from annoy import AnnoyIndex
 from collections import Counter
 import re
+from pathlib import Path
 
 
 print("Global configurations")
@@ -109,8 +114,8 @@ print("Reading mudata")
 os.chdir(working_dir)
 ##mdata = mu.read(path_to_mudata) #totalvi_igt1_56_allgenes_Treg_20240306/adata.h5mu") #mu.read("totalvi_igt1_56_allgenes_Treg_20240306/adata.h5mu
 ##print(mdata)
-mdata = AnnData.read(path_to_anndata) #load this one (results of this block)
-mdata.raw = None
+#mdata = AnnData.read(path_to_anndata) #load this one (results of this block)
+#mdata.raw = None
 ## ImmgenT
 ImmgenT_mdata = AnnData.read(path_to_ImmgenT)
 ## Keep only IGT1_96
@@ -125,11 +130,86 @@ ImmgenT_mdata.layers["counts"] = ImmgenT_mdata.X.copy()
 print(ImmgenT_mdata)
 ## Read in query Anndata object
 #query_mdata = AnnData.read(path_to_query)
-query_mdata = mdata[~mdata.obs['IGT'].isin(All_IGT_values)].copy()
-del mdata
+
+print("Create anndata object from matrix")
+##matrix = scipy.io.mmread(path_to_matrix+"/matrix.mtx.gz").tocsr()
+##matrix = matrix.transpose().tocsr()
+##genes = pd.read_csv(path_to_matrix+"/features.tsv.gz", sep = "\t", header=None, compression='infer')
+##cells = pd.read_csv(path_to_matrix+"/barcodes.tsv.gz", sep = "\t", header=None, compression='infer')
+
+p = Path(path_to_matrix)
+
+def find_file(stem, exts=("", ".gz")):
+    for ext in exts:
+        f = p / f"{stem}{ext}"
+        if f.exists():
+            return f
+    raise FileNotFoundError(f"Could not find {stem}[.gz] in {p}")
+
+# locate files
+matrix_file   = find_file("matrix.mtx")
+#barcodes_file = find_file("barcodes.tsv")
+barcodes_file = (
+    find_file("barcodes.tsv") if (p / "barcodes.tsv").exists() or (p / "barcodes.tsv.gz").exists()
+    else find_file("cells.tsv")
+)
+
+features_file = (
+    find_file("features.tsv") if (p / "features.tsv").exists() or (p / "features.tsv.gz").exists()
+    else find_file("genes.tsv")
+)
+
+# read data
+matrix = scipy.io.mmread(matrix_file).tocsr().T
+cells  = pd.read_csv(barcodes_file, sep="\t", header=None)
+genes  = pd.read_csv(features_file, sep="\t", header=None)
+
+genes.columns = ['gene_id', 'gene_name'] #, 'feature_type']
+# Make genes column unique
+def make_unique(names):
+    counts = {}
+    result = []
+    for name in names:
+        if name not in counts:
+            counts[name] = 1
+            result.append(name)
+        else:
+            new_name = f"{name}_{counts[name]}"
+            while new_name in counts:
+                counts[name] += 1
+                new_name = f"{name}_{counts[name]}"
+            result.append(new_name)
+            counts[new_name] = 1
+    return result
+
+# Apply to gene_name column
+genes['gene_name'] = make_unique(genes['gene_name'])
+
+cells.columns = ['barcode']
+
+query_mdata = AnnData.AnnData(X=matrix, 
+        obs=pd.DataFrame(index=cells["barcode"].values), 
+        var=pd.DataFrame(index=genes["gene_name"].values))
+#del mdata
 query_mdata.X = query_mdata.X.copy()
 query_mdata.layers["counts"] = query_mdata.X.copy()
+print("Pre gene filtering: ")
 print(query_mdata)
+cells_nGenes = mdata.obs.index[mdata.obs['n_genes_by_counts' < 300]
+sc.pp.filter_cells(query_mdata, min_genes=300)
+print("Post gene filtering: ")
+print(query_mdata)
+## Add sample and hashtag information to query mdata before spike-in merge
+query_sample_table = pd.read_csv(query_sample_path, index_col=0)
+#query_sample_table.index = query_sample_table["Cell_ID"]
+joint_bcs = query_sample_table.index.intersection(query_mdata.obs_names)
+query_sample_table = query_sample_table.loc[joint_bcs, :].copy()
+query_mdata = query_mdata[joint_bcs, :].copy()
+query_mdata.obs["IGT"] = query_sample_table["dataset"]
+query_mdata.obs["HT"] = query_sample_table["sample"]
+query_mdata.obs["IGTHT"] = query_mdata.obs["IGT"].astype(str) + "_" + query_mdata.obs["HT"].astype(str)
+query_mdata.obs.to_csv(prefix+"/query_all_metadata.csv", index = True)
+
 spikein_mdata = AnnData.read(path_to_spikein)
 query_mdata = AnnData.concat(
     [query_mdata, spikein_mdata],
@@ -137,6 +217,8 @@ query_mdata = AnnData.concat(
     join="inner"
 )
 
+print("query with spike-in: ")
+print(query_mdata)
 
 ##full.mod['RNA'].obs_names = full_RNA.obs_names.astype(str)
 ##full.mod['RNA'].var_names = genes['x'].astype(str)
@@ -164,35 +246,35 @@ mdata = AnnData.concat(
     keys=["ImmgenT", "query"]
 )
 
-print("Cells pre gene filtering:")
-print(mdata)
+#print("Cells pre gene filtering:")
+#print(mdata)
 
 ## Light QC filtering for nFeatures
-#sc.pp.calculate_qc_metrics(mdata, inplace=True)
-#mdata = mdata[mdata.obs['n_genes_by_counts'] > 300].copy()
-sc.pp.filter_cells(mdata, min_genes=300)
+##sc.pp.calculate_qc_metrics(mdata, inplace=True)
+##mdata = mdata[mdata.obs['n_genes_by_counts'] > 300].copy()
+#sc.pp.filter_cells(mdata, min_genes=300)
 
-print("Cells post gene filtering:")
-print(mdata)
+#print("Cells post gene filtering:")
+#print(mdata)
 
 
 ## Add T Cell score and filter based on this
 ## Read in gene signature list - select T cell genes
-signature_list = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/Query_Integration/SCVI_Integration/Scripts/LineageSpecGns072018_top27.csv", header = 0)
-Tcell_genes = signature_list.loc[81:107, "Marker"].astype(str).tolist()
-Tcell_genes_clean = [g for g in Tcell_genes if g in mdata.var_names]
-print(Tcell_genes_clean)
+signature_list = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/Integration_Webpage/Scripts_TRBI/LineageSpecGns072018_top27.csv", header = 0)
+Tcell_genes = signature_list.loc[signature_list["Type"] == "T", "Marker"].astype(str).tolist()
+#Tcell_genes_clean = [g for g in Tcell_genes if g in mdata.var_names]
+#print(Tcell_genes_clean)
 
 ## Add T cell score based on expression of genes
 ## Extract expression for those genes only
-Tcell_subset = mdata[:, Tcell_genes_clean].X.copy()
+#Tcell_subset = mdata[:, Tcell_genes_clean].X.copy()
 
 ## If sparse, convert to dense
-if not isinstance(Tcell_subset, np.ndarray):
-    Tcell_subset = Tcell_subset.toarray()
+#if not isinstance(Tcell_subset, np.ndarray):
+#    Tcell_subset = Tcell_subset.toarray()
 
 ## Total score per cell (sum over genes)
-mdata.obs['Tcell_gene_score'] = Tcell_subset.sum(axis=1)
+#mdata.obs['Tcell_gene_score'] = Tcell_subset.sum(axis=1)
 
 # Subset based on this score
 query_cells = query_mdata.obs_names
@@ -210,10 +292,25 @@ sc.tl.score_genes(mdata, gene_list=Tcell_genes, score_name='Tcell_gene_module_sc
 print("Pre Tcell filter: ")
 print(mdata)
 Tcell_mask = (
-    (mdata.obs_names.isin(query_cells) & (mdata.obs['Tcell_gene_score'] > 10))
+    (mdata.obs_names.isin(query_cells) & (mdata.obs['Tcell_gene_module_score'] > 0))
     | mdata.obs_names.isin(ImmgenT_cells)
 )
-#mdata = mdata[Tcell_mask, :].copy()
+
+cells_Tcell_score = mdata.obs.index[mdata.obs['Tcell_gene_module_score'] <= 0]
+mdata = mdata[Tcell_mask, :].copy()
+
+print("save QC filtered cells (if any)")
+dfs = []
+
+if cells_Tcell_score is not None:
+    dfs.append(pd.DataFrame({"cell_id": cells_Tcell_score, "QC_filter": "non T cell"}))
+
+if cells_nGenes is not None:
+    dfs.append(pd.DataFrame({"cell_id": cells_nGenes, "QC_filter": "low gene count"}))
+
+if dfs:
+    filtered_cells = pd.concat(dfs, axis=0, ignore_index=True)
+    filtered_cells.to_csv("QC_filtered_cells.csv", index=False)
 
 print("Remaining Tcells: ")
 print(mdata)
@@ -300,6 +397,7 @@ if categorical_covariate_keys is not None:
         ##print(mdata.mod["RNA"].obs[c].head(10))
 
 print("Train new SCVI model")
+## Change path when updated annotation file is ready
 annotation_level2 = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/ImmgenT_freeze_20250109/igt1_104_withtotalvi20250505_annotation_table.csv", delimiter = ",", index_col=0)
 annotation_level2 = annotation_level2.loc[annotation_level2.index.intersection(mdata.obs.index)]
 mdata.obs['level1'] = "Unknown"
@@ -321,35 +419,13 @@ gdT_mdata = mdata[mdata.obs['level1'] == "gdT" ,:].copy()
 
 ## Train separate SCVI models for gdT and abT
 ## abT
-print("LABELS - abT_mdata:")
-print(abT_mdata.obs["level2"].value_counts())
-
-print("\nBATCHES - abT_mdata:")
-print(abT_mdata.obs[batchkey].value_counts())
-
-print("\nCOVARIATES - abT_mdata:")
-#for cov in categorical_covariate_keys:
-#    print(cov)
-#    print(abT_mdata.obs[cov].value_counts())
-
-df_counts_abT = abT_mdata.obs[categorical_covariate_keys].value_counts()
-single_values = df_counts_abT[df_counts_abT == 1].index.tolist()
-abT_mdata.obs["IGTHT"] = abT_mdata.obs["IGTHT"].astype("category").cat.add_categories("merged_batch_ref")
-abT_mdata.obs.loc[abT_mdata.obs["IGTHT"].isin(single_values), "IGTHT"] = "merged_batch_ref"
-
-print("\nCOVARIATES Singletons:")
-print(single_values)
-
 # Comment if already trained
 scvi.model.SCVI.setup_anndata(abT_mdata, layer = "counts", batch_key = batchkey, categorical_covariate_keys = categorical_covariate_keys)
 scvi_model_abT = scvi.model.SCVI(abT_mdata, n_latent=30, n_layers=2)
 scvi_model_abT.train()
 scvi_model_abT.save(prefix+"/scvi_model_abT/") #, save_anndata=True)
-
-## Uncomment if already trained
 #scvi_model_abT = scvi.model.SCVI.load(prefix+"/scvi_model_abT/", adata=abT_mdata)
 
-print("save latent_df_scvi_abT.csv")
 SCANVI_LATENT_KEY = "X_scANVI"
 print("Save latent_representation.csv")
 latent_representation = scvi_model_abT.get_latent_representation()
@@ -370,35 +446,13 @@ latent_df_scvi_abT.to_csv(prefix+"/latent_df_scvi_abT.csv", index=True)
 
 
 ## gdT
-print("LABELS - gdT_mdata:")
-print(gdT_mdata.obs["level2"].value_counts())
-
-print("\nBATCHES - gdT_mdata:")
-print(gdT_mdata.obs[batchkey].value_counts())
-
-print("\nCOVARIATES - gdT_mdata:")
-#for cov in categorical_covariate_keys:
-#    print(cov)
-#    print(gdT_mdata.obs[cov].value_counts())
-
-df_counts_gdT = gdT_mdata.obs[categorical_covariate_keys].value_counts()
-single_values = df_counts_gdT[df_counts_gdT == 1].index.tolist()
-gdT_mdata.obs["IGTHT"] = gdT_mdata.obs["IGTHT"].astype("category").cat.add_categories("merged_batch_ref")
-gdT_mdata.obs.loc[gdT_mdata.obs["IGTHT"].isin(single_values), "IGTHT"] = "merged_batch_ref"
-
-print("\nCOVARIATES Singletons:")
-print(single_values)
-
 # Comment if already trained
 scvi.model.SCVI.setup_anndata(gdT_mdata, layer = "counts", batch_key = batchkey, categorical_covariate_keys = categorical_covariate_keys)
 scvi_model_gdT = scvi.model.SCVI(gdT_mdata, n_latent=30, n_layers=2)
 scvi_model_gdT.train()
 scvi_model_gdT.save(prefix+"/scvi_model_gdT/") #, save_anndata=True)
-
-## Uncomment if already trained
 #scvi_model_gdT = scvi.model.SCVI.load(prefix+"/scvi_model_gdT/", adata=gdT_mdata)
 
-print("save latent_df_scvi_gdT.csv")
 SCANVI_LATENT_KEY = "X_scANVI"
 print("Save latent_representation.csv")
 latent_representation = scvi_model_gdT.get_latent_representation()
@@ -410,12 +464,12 @@ latent_df_scvi_gdT = pd.DataFrame(latent_representation, index = gdT_mdata.obs.i
 
 latent_df_scvi_gdT.to_csv(prefix+"/latent_df_scvi_gdT.csv", index=True)
 
-#print("Save umap.csv")
+print("Save umap.csv")
 #sc.pp.neighbors(gdT_mdata, use_rep=SCVI_LATENT_KEY)
 #sc.tl.umap(gdT_mdata, min_dist=0.4)
 ##umap_df = pd.DataFrame(mdata.obsm['X_umap'], index = mdata.mod['RNA'].obs.index)
 #umap_df = pd.DataFrame(gdT_mdata.obsm['X_umap'], index = gdT_mdata.obs.index)
-#umap_df.to_csv(prefix+"/umap_python.csv", index=True)
+##umap_df.to_csv(prefix+"/umap_python.csv", index=True)
 
 print("Save Anndata")
 mdata.write_h5ad(prefix+"/adata_RNA.h5ad")
@@ -460,12 +514,9 @@ scvi.model.SCVI.setup_anndata(
     categorical_covariate_keys=categorical_covariate_keys,
     labels_key="level1_abT"
 )
-## Comment if already trained
 level1_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "Unknown", labels_key="level1_abT")
 level1_model_abT.train(25)
 level1_model_abT.save(prefix+"/abT_scanvi_level1_model/") #, save_anndata=True)
-
-## Uncomment if already trained
 #level1_model_abT = scvi.model.SCANVI.load(prefix+"/abT_scanvi_level1_model/", adata=abT_mdata)
 
 
@@ -491,12 +542,9 @@ scvi.model.SCVI.setup_anndata(
     categorical_covariate_keys=categorical_covariate_keys,
     labels_key="level2_abT"
 )
-## Comment if already trained
 level2_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "Unknown", labels_key="level2_abT")
 level2_model_abT.train(25)
 level2_model_abT.save(prefix+"/abT_scanvi_level2_model/") #, save_anndata=True)
-
-## Uncomment if already trained
 #level2_model_abT = scvi.model.SCANVI.load(prefix+"/abT_scanvi_level2_model/", adata=abT_mdata)
 
 ## gdT only
@@ -527,13 +575,10 @@ scvi.model.SCVI.setup_anndata(
     categorical_covariate_keys=categorical_covariate_keys,
     labels_key="level2_gdT"
 )
-## Comment if already trained
 level2_model_gdT = scvi.model.SCANVI.from_scvi_model(scvi_model_gdT, "Unknown", labels_key="level2_gdT")
 level2_model_gdT.train(max_epochs=25, train_size=1.0, validation_size=0) # Add last parameters to stop batchNorm error - 1 value per channel when training
 level2_model_gdT.save(prefix+"/gdT_scanvi_level2_model/") #, save_anndata=True)
-
-## Uncomment if already trained
-level2_model_gdT = scvi.model.SCANVI.load(prefix+"/gdT_scanvi_level2_model/", adata=gdT_mdata)
+#level2_model_gdT = scvi.model.SCANVI.load(prefix+"/gdT_scanvi_level2_model/", adata=gdT_mdata)
 
 
 ## Predictions and scores - create output file

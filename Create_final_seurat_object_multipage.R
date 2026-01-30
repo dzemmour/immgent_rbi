@@ -7,13 +7,13 @@ library(ZemmourLib)
 library(RColorBrewer)
 
 args = commandArgs(TRUE)
-so_path = args[1]
+matrix_path = args[1]
 query_all_metadata = args[2]
 output_file_query = args[3]
 mde_plot_path = args[4]
 annotation = as.character(args[5])
 prefix = args[6]
-EXP_name = args[7]
+#EXP_name = args[7]
 
 mypal_level1 <- c(ZemmourLib::immgent_colors$level1, "not classified" = "black", "nonT" = "darkgray")
 level1_subgroup <- mypal_level1
@@ -37,10 +37,64 @@ mde <- read.csv(mde_plot_path, row.names = 1)
 
 #annotation = "celltypes"
 #so <- readRDS("N:/CBDM_Lab/Odhran/Data_Integration_Webpage/Plotting/multiple groups/David_Foxp3_creERT2_TdT_seurat_object.Rds")
-so <- readRDS(so_path)
+#so <- readRDS(so_path)
+
+files <- list.files(matrix_path)
+
+#matrix_in <- Read10X(matrix_path)
+
+#matrix_in <- Read10X(
+#  data.dir = matrix_path,
+#  gene.column = 2,
+#  unique.features = TRUE,
+#  strip.suffix = FALSE
+#)
+
+read10x_flexible <- function(dir) {
+  files <- list.files(dir)
+
+  pick <- function(base) {
+    if (paste0(base, ".gz") %in% files) return(paste0(base, ".gz"))
+    if (base %in% files) return(base)
+    stop("Missing ", base, " or ", base, ".gz in ", dir)
+  }
+
+  mtx  <- pick("matrix.mtx")
+  bc   <- pick("barcodes.tsv")
+  feat <- if ("features.tsv.gz" %in% files || "features.tsv" %in% files) {
+    pick("features.tsv")
+  } else {
+    pick("genes.tsv")
+  }
+
+  library(Matrix)
+  mat <- readMM(file.path(dir, mtx))
+  barcodes <- read.delim(file.path(dir, bc), header = FALSE)
+  features <- read.delim(file.path(dir, feat), header = FALSE)
+
+  rownames(mat) <- features[, 2]
+  colnames(mat) <- barcodes[, 1]
+
+  mat <- as(mat, "dgCMatrix")
+  mat
+}
+
+files <- list.files(matrix_path)
+if (("barcodes.tsv.gz" %in% files | "cells.tsv.gz" %in% files)) {
+        matrix_in <- Read10X(matrix_path)
+} else {
+        matrix_in <- read10x_flexible(matrix_path)
+
+}
+
+#matrix_in <- read10x_flexible(matrix_path)
+so <- CreateSeuratObject(matrix_in)
+so[['RNA']] <- CreateAssayObject(so@assays$RNA$counts)
+
 
 query_all_metadata <- read.csv(query_all_metadata, row.names = 1)
 output_file_query <- read.csv(output_file_query, row.names = 1)
+output_file_query$confidence_score <- max(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence)
 #mypal_annotation <- setNames(c(mypal,mypal)[1:length(unique(query_all_metadata[, annotation]))], unique(query_all_metadata[, annotation]))
 
 joint.bcs = intersect(rownames(query_all_metadata), rownames(output_file_query))
@@ -57,7 +111,6 @@ tmp = table(so$level1_final)
 write.table(tmp, paste0(prefix, "/level1_final_table.txt"),quote = F, row.names = F, col.names = F, sep = "\t")
 tmp = table(so$level2_final)
 write.table(tmp, paste0(prefix, "/level2_final_table.txt"),quote = F, row.names = F, col.names = F, sep = "\t")
-
 
 # level1
 allT_coords <- output_file_query[, c("allT_MDE1", "allT_MDE2")]
@@ -90,11 +143,14 @@ so$RNA_clusters <- so@meta.data[, annotation]
 so$sample_name <- so@meta.data[, "IGTHT"]
 #so$sample_name <- so$batch_sample
 
-colnames(so) <- paste0(EXP_name, ".", colnames(so))
+#colnames(so) <- paste0(EXP_name, ".", colnames(so))
+
 
 ## Plots for webpage
-level1_confidence <- ggplot(so@meta.data, mapping = aes(x = level1_scanvi_confidence)) + geom_density(fill = "skyblue", alpha = 0.5) + theme_minimal() + xlim(0,1) + ggtitle("level1 scanvi score distribution")
-level2_confidence <- ggplot(so@meta.data, mapping = aes(x = level2_scanvi_confidence)) + geom_density(fill = "red", alpha = 0.5) + theme_minimal() + xlim(0,1) + ggtitle("level2 scanvi score distribution")
+#level1_confidence <- ggplot(so@meta.data, mapping = aes(x = level1_scanvi_confidence)) + geom_density(fill = "skyblue", alpha = 0.5) + theme_minimal() + xlim(0,1) + ggtitle("level1 scanvi score distribution")
+#level2_confidence <- ggplot(so@meta.data, mapping = aes(x = level2_scanvi_confidence)) + geom_density(fill = "red", alpha = 0.5) + theme_minimal() + xlim(0,1) + ggtitle("level2 scanvi score distribution")
+scanvi_confidence <- ggplot(so@meta.data, mapping = aes(x = level2_scanvi_confidence)) + geom_density(fill = "red", alpha = 0.5) + theme_minimal() + xlim(0,1) + ggtitle("scanvi score distribution")
+
 
 ## Plot with ggplot
 so <- AddMetaData(so, so[['umap_rna']]@cell.embeddings)
@@ -128,8 +184,8 @@ query_only_not_classified <-  ggplot() + geom_scattermore(metadata_plot, mapping
   ggtitle(paste0('Query cells: "not classified" (red - ', level2_not_classified_percentage, '% ) overlayed onto classified (grey)')) 
 #query_only_not_classified <-  DimPlot(so[, so$level2_final %in% c(subgroups, "not classified")], reduction = "umap_rna", group.by = "level2_final", pt.size = 1/log10(ncells_plotted+1))  
 
-query_only <- DimPlot(so, reduction = "umap_rna", group.by = "level1_final") + theme(
-  axis.title = element_blank())
+#query_only <- DimPlot(so, reduction = "umap_rna", group.by = "level1_final") + theme(
+#  axis.title = element_blank())
 
 ncells_plotted <- length(query_cells)
 allT_level1_final <- ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
@@ -147,7 +203,7 @@ allT_annotation <- ggplot() + geom_scattermore(data = mde, mapping = aes(x = all
     plot.title = element_text(size = 18)) + ggtitle('Query cells (paper annotation) overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
 #allT_annotation <- DimPlot(so, reduction = "mde_incremental_allT", group.by = annotation, pt.size = 1/log10(ncells_plotted+1)) + xlim(-2,2) + ylim(-2,2)
 
-plots <- list(level2_confidence, query_only_not_classified, allT_level1_final, allT_annotation)
+plots <- list(scanvi_confidence, query_only_not_classified, allT_level1_final, allT_annotation)
 
 #percentages <- as.data.frame(table(metadata_plot$level1_final))
 #rownames(percentages) <- percentages$Var1
@@ -156,9 +212,111 @@ plots <- list(level2_confidence, query_only_not_classified, allT_level1_final, a
 #percentages <- (percentages / sum(percentages$Freq)) * 100
 #percentages <- percentages[!(rownames(percentages) %in% c("not classified", "nonT", "remove", "unclear", "thyocyte"), , drop = F]
 
-pdf(paste0(prefix, "/test_show_results_multipage.pdf"), height = 15, width = 15)
-p <- grid.arrange(grobs = plots[1:4], ncol = 2)
+## Create Discovery score plot
+scores_tbl_list2 = list()
+summaries_list2 = list()
 
+library(RANN)
+knn_novelty_scores <- function(old_mat, new_mat, k = 10) {
+  old_mat <- as.matrix(old_mat)
+  new_mat <- as.matrix(new_mat)
+  stopifnot(ncol(old_mat) >= 2, ncol(new_mat) >= 2, ncol(old_mat) == ncol(new_mat))
+  if (nrow(new_mat) <= k) stop("Need k < number of new points.")
+  
+  # Mean distance to k nearest REFERENCE neighbors
+  ref_knn <- nn2(data = old_mat, query = new_mat, k = k)
+  mean_d_ref <- rowMeans(ref_knn$nn.dists)
+  
+  # Mean distance to k nearest QUERY neighbors (leave-one-out: drop the self at distance 0)
+  qry_knn <- nn2(data = new_mat, query = new_mat, k = k + 1)
+  # First column is self (distance 0). Remove it; take the next k neighbors.
+  mean_d_qry <- rowMeans(qry_knn$nn.dists[, -1, drop = FALSE])
+  
+  # Scores
+  ratio <- mean_d_ref / mean_d_qry
+  score_log <- log(ratio)
+  score_sym <- (mean_d_ref - mean_d_qry) / (mean_d_ref + mean_d_qry)  # in [-1, 1]
+  
+  tibble::tibble(
+    idx = seq_len(nrow(new_mat)),
+    mean_d_ref = mean_d_ref,
+    mean_d_qry = mean_d_qry,
+    ratio = ratio,
+    score_log = score_log,
+    score_sym = score_sym
+  )
+}
+
+tmp = so
+tmp = tmp[,tmp@meta.data %>% filter(!level2_final %in% c("nonT", "unclear")) %>% row.names()]
+# tmp = tmp %>%
+#     NormalizeData(normalization.method = "LogNormalize", verbose = F) %>%
+#     FindVariableFeatures(selection.method = "vst", nfeatures = 2000, verbose = F) %>%
+#     ScaleData(features = VariableFeatures(.), verbose = F) %>%
+#     RunPCA(features = VariableFeatures(.), npcs = 30, verbose = F) %>%
+#     FindNeighbors(dims = 1:30, verbose = F) %>%
+#     RunUMAP(dims = 1:30, seed.use = 123, verbose = T)
+if (!"mde_incremental_allT" %in% names(tmp@reductions)) {
+  message("Skipping : no mde_incremental_allT")
+  next
+}
+if (!"umap_rna" %in% names(tmp@reductions)) {
+  message("Skipping : no umap_rna")
+  next
+}
+if (!"pca_rna" %in% names(tmp@reductions)) {
+  message("Skipping : no pca_rna")
+  next
+}
+
+tmp$is_noclassl2 = F
+tmp$is_noclassl2[tmp$level2_final %in% c("not classified", "CD8", "Treg", "CD4", "nonconv",  "gdT", "CD8aa","DN", "DP")] = T
+old_mat = tmp[["pca_rna"]]@cell.embeddings[tmp$is_noclassl2 == F,]
+new_mat = tmp[["pca_rna"]]@cell.embeddings[tmp$is_noclassl2 == T,]
+scores_tbl = knn_novelty_scores(old_mat, new_mat, k = 10) %>% as.data.frame()
+rownames(scores_tbl) = rownames(new_mat)
+scores_tbl$dataset = "dataset"
+scores_tbl$mde_incremental_allT_dim1 = tmp[["mde_incremental_allT"]]@cell.embeddings[rownames(scores_tbl),1]
+scores_tbl$mde_incremental_allT_dim2 = tmp[["mde_incremental_allT"]]@cell.embeddings[rownames(scores_tbl),2]
+scores_tbl_list2[["dataset"]] = scores_tbl
+
+tmp$score_log = NA
+tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
+tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
+tmp$discovery = tmp$score_log > log(2)
+
+discovery_score_allT <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
+  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = score_log)) + 
+  theme_classic() + scale_colour_gradient2(low = "black", mid = "white",high = "red", midpoint = 0) + 
+  theme(
+    axis.title = element_blank(), 
+    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
+
+discovery_score <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
+  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = discovery)) + 
+  theme_classic() + scale_colour_manual(values = c("FALSE" = "Black", "TRUE" = "Red")) + 
+  theme(
+    axis.title = element_blank(), 
+    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
+  
+pdf(paste0(prefix, "/TRBI.pdf"), height = 15, width = 15)
+## Page 1 - scanvi distribution, allT immgenT, allT query sample
+p <- grid.arrange(grobs = plots[c(1, 3:4)], ncol = 2)
+
+## Page 2 - Feature plot of genes
+DefaultAssay(so) <- "RNA"
+genes <- c("Foxp3", "Cd4", "Cd8b1", "Cd8a", "Trdc", "Zbtb16") 
+genes <- genes[genes %in% rownames(so)]
+plots_feature  <- FeaturePlot(so, reduction = "mde_incremental_allT", features = genes, order = T, combine = F)
+plots_feature <- lapply(plots_feature, function(p) {
+  p + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
+})
+
+plot_features <- CombinePlots(plots_feature, ncol = 2)
+print(plot_features)
+
+
+# Pages 3-5 - subgroup plots, immgenT, sample
 if (length(rownames(percentages_subset)[which(percentages_subset > 0)]) == 1) {
   i = 5
   group <- rownames(percentages_subset)[which(percentages_subset > 0)]
@@ -293,20 +451,32 @@ if (n_plots > 4) {
   }
 }
 
-DefaultAssay(so) <- "RNA"
-genes <- c("Foxp3", "Cd4", "Cd8b1", "Cd8a", "Trdc", "Zbtb16") 
-genes <- genes[genes %in% rownames(so)]
-plots  <- FeaturePlot(so, reduction = "mde_incremental_allT", features = genes, order = T, combine = F)
-plots <- lapply(plots, function(p) {
-  p + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
-})
-
-plot_features <- CombinePlots(plots, ncol = 2)
-print(plot_features)
+## page 6 - not classified UMAP, discovery score allT
+p <- grid.arrange(plots[[3]], discovery_score_allT, discovery_score, ncol = 2, nrow = 2, heights = c(0.5, 0.5))
 
 dev.off()
 
-saveRDS(so, paste0(prefix, "/Final_Seurat_object.Rds"))
+output_file_query$confidence_score <- pmax(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence, na.rm = F)
+final_output_file <- output_file_query[, c("level1_final", "level2_final", "confidence_score")]
+colnames(final_output_file) <- c("level1_final", "level2_final", "confidence_score")
+write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = T, col.names = T, quote = F)
+
+MDE_save <- sort(unique(output_file_query$level1_final))
+MDE_save <- MDE_save[!(MDE_save %in% c("unclear", "nonT", "remove", "not classified"))]
+for (group in MDE_save) {
+  print(group)
+
+  mde <- output_file_query[output_file_query$level1_final == group, c("level2_MDE1", "level2_MDE2")]
+  if (length(rownames(mde)) > 20) {
+    write.csv(mde, paste0(prefix, "/", group ,"_mde.csv"), quote = F, row.names = T, col.names = T)
+  }
+}
+
+allT_MDE <- output_file_query[, c("allT_MDE1", "allT_MDE2")]
+write.csv(allT_MDE, paste0(prefix, "/AllT_mde.csv"), quote = F, row.names = T, col.names = T)
+
+
+#saveRDS(so, paste0(prefix, "/Final_Seurat_object.Rds"))
 write.csv(percentages, paste0(prefix, "/percentages_final.csv"))
 
 #predictions_output_file_not_classified <- read.csv("N:/CBDM_Lab/Odhran/Data_Integration_Webpage/Plotting/predictions_output_file_not_classified.csv", row.names = 1)
