@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -p short
-#SBATCH -t 0-11:59:59
-#SBATCH --mem 32G
+#SBATCH -p medium
+#SBATCH -t 1-11:59:59
+#SBATCH --mem 128G
 #SBATCH -c 8
 #SBATCH -o wrapper_totalvi.log
 #SBATCH -e wrapper_totalvi.err
