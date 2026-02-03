@@ -94,7 +94,7 @@ so[['RNA']] <- CreateAssayObject(so@assays$RNA$counts)
 
 query_all_metadata <- read.csv(query_all_metadata, row.names = 1)
 output_file_query <- read.csv(output_file_query, row.names = 1)
-output_file_query$confidence_score <- max(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence)
+output_file_query$confidence_score <- pmax(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence)
 #mypal_annotation <- setNames(c(mypal,mypal)[1:length(unique(query_all_metadata[, annotation]))], unique(query_all_metadata[, annotation]))
 
 joint.bcs = intersect(rownames(query_all_metadata), rownames(output_file_query))
@@ -282,7 +282,6 @@ scores_tbl_list2[["dataset"]] = scores_tbl
 
 tmp$score_log = NA
 tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
-tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
 tmp$discovery = tmp$score_log > log(2)
 
 discovery_score_allT <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
@@ -462,7 +461,7 @@ output_file_query$score_log <- NA
 output_file_query[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
 output_file_query$discovery <- output_file_query$score_log > log(2)
 final_output_file <- output_file_query[, c("level1_final", "level2_final", "confidence_score", "score_log", "discovery")]
-colnames(final_output_file) <- c("level1_final", "level2_final", "confidence_score", , "score_log", "discovery")
+colnames(final_output_file) <- c("level1_final", "level2_final", "confidence_score", "score_log", "discovery")
 write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = T, col.names = T, quote = F)
 
 MDE_save <- sort(unique(output_file_query$level1_final))
