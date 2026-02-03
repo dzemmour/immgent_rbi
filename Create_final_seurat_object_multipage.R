@@ -457,8 +457,12 @@ p <- grid.arrange(plots[[3]], discovery_score_allT, discovery_score, ncol = 2, n
 dev.off()
 
 output_file_query$confidence_score <- pmax(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence, na.rm = F)
-final_output_file <- output_file_query[, c("level1_final", "level2_final", "confidence_score")]
-colnames(final_output_file) <- c("level1_final", "level2_final", "confidence_score")
+overlapping_cells <- intersect(rownames(output_file_query), rownames(tmp@meta.data))
+output_file_query$score_log <- NA
+output_file_query[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
+output_file_query$discovery <- output_file_query$score_log > log(2)
+final_output_file <- output_file_query[, c("level1_final", "level2_final", "confidence_score", "score_log", "discovery")]
+colnames(final_output_file) <- c("level1_final", "level2_final", "confidence_score", , "score_log", "discovery")
 write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = T, col.names = T, quote = F)
 
 MDE_save <- sort(unique(output_file_query$level1_final))
