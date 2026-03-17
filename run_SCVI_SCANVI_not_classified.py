@@ -430,7 +430,7 @@ while ((percentage > 1) and (difference > 1.5)):
           print("Skipping gdT SCANVI: <2 labeled cells")
       else:
           level2_model_gdT = scvi.model.SCANVI.from_scvi_model(scvi_model_gdT, "not classified",labels_key="level2_gdT")
-          level2_model_gdT.train(30, train_size=1.0, validation_size=0)
+          level2_model_gdT.train(30, train_size=0.9, validation_size=0.1)
       #level2_model_gdT = scvi.model.SCANVI.from_scvi_model(scvi_model_gdT, "not classified", labels_key="level2_gdT")
       #level2_model_gdT.train(30, train_size=1.0, validation_size=0)
       #level2_model_gdT.save(prefix+"/gdT_scanvi_level2_model/", save_anndata=True)
