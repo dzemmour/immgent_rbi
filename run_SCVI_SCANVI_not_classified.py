@@ -336,10 +336,25 @@ while ((percentage > 1) and (difference > 1.5)):
       labels_key="level1_abT"
   )
 
-  n_labeled = (abT_mdata.obs["level1_abT"] != "not classified").sum()
-  print("Labeled abT cells:", n_labeled)
-  if n_labeled < 2:
+
+  level1_model_abT = None
+  labels = abT_mdata.obs["level1_abT"]
+  labeled = labels[labels != "not classified"]
+
+  #n_labeled_level1 = labeled.shape[0]
+  n_classes_level1 = labeled.nunique()
+  
+  n_labeled_level1 = (abT_mdata.obs["level1_abT"] != "not classified").sum()
+  #n_classes_level1 = labeled.nunique()
+  print("Labeled abT cells:", n_labeled_level1)
+  print("number_classes:", n_classes_level1)
+  if n_labeled_level1 < 2:
       print("Skipping abT SCANVI: <2 labeled cells after filtering")
+  elif n_classes_level1 < 2:
+      print(
+              f"Skipping abT SCANVI: only one labeled class "
+              f"({labeled.unique()[0]}) after excluding 'not classified'"
+              )
   else:
       level1_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "not classified", labels_key="level1_abT")
       level1_model_abT.train(30, train_size=0.9,batch_size=128, validation_size=0.1)
@@ -380,6 +395,7 @@ while ((percentage > 1) and (difference > 1.5)):
   #level2_model_abT = scvi.model.SCANVI.load(prefix+"/abT_scanvi_level2_model/", adata=abT_mdata)
   
 
+  level2_model_gdT = None  # important
   if gdT_mdata.obs.shape[0] > 1 :
       ## gdT only
       #gdT_mdata = mdata[mdata.obs['level1'] == "gdT" ,:].copy()
@@ -420,7 +436,7 @@ while ((percentage > 1) and (difference > 1.5)):
       #level2_model_gdT.save(prefix+"/gdT_scanvi_level2_model/", save_anndata=True)
       #level2_model_gdT = scvi.model.SCANVI.load(prefix+"/gdT_scanvi_level2_model/", adata=gdT_mdata)
   
-  
+  confidence_threshold = 0.85
   ## Predictions and scores - create output file
   ## level1
   ##SCVI_LATENT_KEY = "X_SCVI"
@@ -428,24 +444,47 @@ while ((percentage > 1) and (difference > 1.5)):
   LEVEL1_SCANVI_PREDICTIONS_KEY = "level1_C_scANVI"
   
   ##abT_mdata.obsm[SCVI_LATENT_KEY] = scvi_model.get_latent_representation(abT_mdata)
-  abT_mdata.obsm[LEVEL1_SCANVI_LATENT_KEY] = level1_model_abT.get_latent_representation(abT_mdata)
-  abT_mdata.obs[LEVEL1_SCANVI_PREDICTIONS_KEY]= level1_model_abT.predict(abT_mdata)
-  abT_output_file = pd.DataFrame(abT_mdata.obs[LEVEL1_SCANVI_PREDICTIONS_KEY], index = abT_mdata.obs.index)
+  if n_classes_level1 > 1 and n_labeled_level1 > 1:
+      abT_mdata.obsm[LEVEL1_SCANVI_LATENT_KEY] = level1_model_abT.get_latent_representation(abT_mdata)
+      abT_mdata.obs[LEVEL1_SCANVI_PREDICTIONS_KEY]= level1_model_abT.predict(abT_mdata)
+      abT_output_file = pd.DataFrame(abT_mdata.obs[LEVEL1_SCANVI_PREDICTIONS_KEY], index = abT_mdata.obs.index)
+      #level1_abT_latent_df = pd.DataFrame(abT_mdata.obsm[LEVEL1_SCANVI_LATENT_KEY], index = abT_mdata.obs.index)
+      #level1_abT_latent_df.to_csv(prefix+"/latent_level1_abT.csv", index=True)
+      ## Get posterior probabilities for all labels
+
+      level1_probs = level1_model_abT.predict(abT_mdata, soft=True)
+      ## Get max probability per cell (i.e., model confidence)
+      level1_confidence = level1_probs.max(axis=1)
+      ## Add to AnnData
+      abT_output_file["level1_scanvi_confidence"] = level1_confidence
+      ##abT_output_file.to_csv(prefix_SCANVI+"/predicted_celltypes.csv")
+
+      ## Add final annotation  with unclear below a threshold
+      confidence_threshold = 0.85
+      abT_output_file["level1_final"] = abT_output_file[LEVEL1_SCANVI_PREDICTIONS_KEY]
+      abT_output_file.loc[abT_output_file["level1_scanvi_confidence"] < confidence_threshold, "level1_final"] = "not classified"
+
+
+  else:
+      abT_output_file = pd.DataFrame(abT_mdata.obs[LEVEL1_SCANVI_PREDICTIONS_KEY], index = abT_mdata.obs.index)
+      abT_output_file["level1_scanvi_confidence"] = abT_mdata.obs["level1_scanvi_confidence"]
+      abT_output_file["level1_final"] = abT_mdata.obs["level1_final"]
+  
   #level1_abT_latent_df = pd.DataFrame(abT_mdata.obsm[LEVEL1_SCANVI_LATENT_KEY], index = abT_mdata.obs.index)
   #level1_abT_latent_df.to_csv(prefix+"/latent_level1_abT.csv", index=True)
   
   ## Get posterior probabilities for all labels
-  level1_probs = level1_model_abT.predict(abT_mdata, soft=True)
+  #level1_probs = level1_model_abT.predict(abT_mdata, soft=True)
   ## Get max probability per cell (i.e., model confidence)
-  level1_confidence = level1_probs.max(axis=1)
+  #level1_confidence = level1_probs.max(axis=1)
   ## Add to AnnData
-  abT_output_file["level1_scanvi_confidence"] = level1_confidence
+  #abT_output_file["level1_scanvi_confidence"] = level1_confidence
   ##abT_output_file.to_csv(prefix_SCANVI+"/predicted_celltypes.csv")
   
   ## Add final annotation  with unclear below a threshold
-  confidence_threshold = 0.85
-  abT_output_file["level1_final"] = abT_output_file[LEVEL1_SCANVI_PREDICTIONS_KEY]
-  abT_output_file.loc[abT_output_file["level1_scanvi_confidence"] < confidence_threshold, "level1_final"] = "not classified"
+  #confidence_threshold = 0.85
+  #abT_output_file["level1_final"] = abT_output_file[LEVEL1_SCANVI_PREDICTIONS_KEY]
+  #abT_output_file.loc[abT_output_file["level1_scanvi_confidence"] < confidence_threshold, "level1_final"] = "not classified"
   
   ## level2
   ##SCVI_LATENT_KEY = "X_SCVI"
@@ -604,14 +643,15 @@ while ((percentage > 1) and (difference > 1.5)):
   #mdata.obs.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]] = output_file.loc[output_file.index, ["level1_final", "level1_scanvi_confidence", "level2_final", "level2_scanvi_confidence"]]
 
   groups2 = sorted(output_file["level2_C_scANVI"].unique())
-  groups2 = [g for g in groups2 if g not in ["unclear", "nonT", "remove"]]
+  groups2 = [g for g in groups2 if g not in ["unclear", "nonT", "remove", "not_classified"]]
   
   for annot2 in groups2:
     #mask2 = (output_file["level1_final"] == "not classified") & (output_file["level2_final"] == annot)
     #output_file.loc[mask1, "level1_final"] = annot.split("_")[0]
 
     mask2 = (output_file["level2_final"] == annot2)
-    output_file.loc[mask2, "level1_final"] = annot2.split("_")[0]
+    #output_file.loc[mask2, "level1_final"] = annot2.split("_")[0]
+    output_file.loc[mask2, "level1_final"] = annot2.split(".")[0]
 
 
   print("loop end: ", i)

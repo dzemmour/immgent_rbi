@@ -164,7 +164,7 @@ matrix = scipy.io.mmread(matrix_file).tocsr().T
 cells  = pd.read_csv(barcodes_file, sep="\t", header=None)
 genes  = pd.read_csv(features_file, sep="\t", header=None)
 
-genes.columns = ['gene_id', 'gene_name'] #, 'feature_type']
+genes.columns = ['gene_name'] #, 'feature_type']
 # Make genes column unique
 def make_unique(names):
     counts = {}
@@ -195,7 +195,8 @@ query_mdata.X = query_mdata.X.copy()
 query_mdata.layers["counts"] = query_mdata.X.copy()
 print("Pre gene filtering: ")
 print(query_mdata)
-cells_nGenes = mdata.obs.index[mdata.obs['n_genes_by_counts' < 300]
+sc.pp.calculate_qc_metrics(query_mdata, inplace=True)
+cells_nGenes = query_mdata.obs.index[(query_mdata.obs['n_genes_by_counts'] < 300)]
 sc.pp.filter_cells(query_mdata, min_genes=300)
 print("Post gene filtering: ")
 print(query_mdata)
@@ -205,12 +206,16 @@ query_sample_table = pd.read_csv(query_sample_path, index_col=0)
 joint_bcs = query_sample_table.index.intersection(query_mdata.obs_names)
 query_sample_table = query_sample_table.loc[joint_bcs, :].copy()
 query_mdata = query_mdata[joint_bcs, :].copy()
-query_mdata.obs["IGT"] = query_sample_table["dataset"]
-query_mdata.obs["HT"] = query_sample_table["sample"]
-query_mdata.obs["IGTHT"] = query_mdata.obs["IGT"].astype(str) + "_" + query_mdata.obs["HT"].astype(str)
+query_mdata.obs["IGT"] = query_sample_table["batch"]
+#query_mdata.obs["HT"] = query_sample_table["sample"]
+#query_mdata.obs["IGTHT"] = query_mdata.obs["IGT"].astype(str) + "_" + query_mdata.obs["HT"].astype(str)
 query_mdata.obs.to_csv(prefix+"/query_all_metadata.csv", index = True)
+query_cells = query_mdata.obs_names
+print("Save Anndata")
+query_mdata.write_h5ad(prefix+"/adata_RNA.h5ad")
 
 spikein_mdata = AnnData.read(path_to_spikein)
+spikein_cells = spikein_mdata.obs_names.astype(str)
 query_mdata = AnnData.concat(
     [query_mdata, spikein_mdata],
     axis=0,
@@ -277,7 +282,7 @@ Tcell_genes = signature_list.loc[signature_list["Type"] == "T", "Marker"].astype
 #mdata.obs['Tcell_gene_score'] = Tcell_subset.sum(axis=1)
 
 # Subset based on this score
-query_cells = query_mdata.obs_names
+##query_cells = query_mdata.obs_names
 ImmgenT_cells = ImmgenT_mdata.obs_names
 #Tcell_mask = (mdata.obs_names.isin(query_cells)) & (mdata.obs['Tcell_gene_score'] > 10)
 
@@ -293,10 +298,14 @@ print("Pre Tcell filter: ")
 print(mdata)
 Tcell_mask = (
     (mdata.obs_names.isin(query_cells) & (mdata.obs['Tcell_gene_module_score'] > 0))
-    | mdata.obs_names.isin(ImmgenT_cells)
+    | mdata.obs_names.isin(ImmgenT_cells) | mdata.obs_names.isin(spikein_cells)
 )
 
-cells_Tcell_score = mdata.obs.index[mdata.obs['Tcell_gene_module_score'] <= 0]
+non_Tcell_mask = (
+    (mdata.obs_names.isin(query_cells) & (mdata.obs['Tcell_gene_module_score'] <= 0))
+)
+
+cells_Tcell_score = mdata.obs.index[non_Tcell_mask]
 mdata = mdata[Tcell_mask, :].copy()
 
 print("save QC filtered cells (if any)")
@@ -310,7 +319,7 @@ if cells_nGenes is not None:
 
 if dfs:
     filtered_cells = pd.concat(dfs, axis=0, ignore_index=True)
-    filtered_cells.to_csv("QC_filtered_cells.csv", index=False)
+    filtered_cells.to_csv(prefix+"/QC_filtered_cells.csv", index=False)
 
 print("Remaining Tcells: ")
 print(mdata)
@@ -325,12 +334,18 @@ genes = mdata.var_names
 ##Trbv = [g for g in genes if re.match(r'^Trbv', g)]
 ##Trbd = [g for g in genes if re.match(r'^Trbd', g)]
 ##Trbj = [g for g in genes if re.match(r'^Trbj', g)]
-Trd  = [g for g in genes if re.match(r'^Trd',  g)]
-Trg  = [g for g in genes if re.match(r'^Trg',  g)]
+Trdv  = [g for g in genes if re.match(r'^Trdv',  g)]
+Trdd  = [g for g in genes if re.match(r'^Trdd',  g)]
+Trdc  = [g for g in genes if re.match(r'^Trdc',  g)]
+Trdj  = [g for g in genes if re.match(r'^Trdj',  g)]
+Trgv  = [g for g in genes if re.match(r'^Trgv',  g)]
+Trgj  = [g for g in genes if re.match(r'^Trgj',  g)]
+Trgc  = [g for g in genes if re.match(r'^Trgc',  g)]
+
 
 # Combine all TCR-related genes
 ##TCR_genes = Trav + Traj + Trac + Trbv + Trbd + Trbj + Trd + Trg
-gdT_genes = Trd + Trg + ["Sox13"]
+gdT_genes = Trdv + Trdd + Trdc + Trdj + Trgv + Trgj + Trgc + ["Sox13"]
 
 # List of sex-specific genes
 ##sex_specific_genes = ['Ddx3y', 'Uty', 'Xist', 'Eif2s3y', 'Kdm5d', 'Tsix']
@@ -398,7 +413,8 @@ if categorical_covariate_keys is not None:
 
 print("Train new SCVI model")
 ## Change path when updated annotation file is ready
-annotation_level2 = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/ImmgenT_freeze_20250109/igt1_104_withtotalvi20250505_annotation_table.csv", delimiter = ",", index_col=0)
+annotation_level2 = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/ImmgenT_freeze_20250109/new_annotations/GSE297097_annotation_table_20260206_IGT1_104_cleaned.csv", delimiter = ",", index_col=0)
+#annotation_level2 = pd.read_csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/ImmgenT_freeze_20250109/igt1_104_withtotalvi20250505_annotation_table.csv", delimiter = ",", index_col=0)
 annotation_level2 = annotation_level2.loc[annotation_level2.index.intersection(mdata.obs.index)]
 mdata.obs['level1'] = "Unknown"
 mdata.obs['level2'] = "Unknown"
@@ -406,8 +422,8 @@ mdata.obs['level2'] = "Unknown"
 mdata.obs.loc[annotation_level2.index, 'level1'] = annotation_level2['level1'].values
 mdata.obs.loc[annotation_level2.index, 'level2'] = annotation_level2['level2'].values
 ##mdata.obs.loc[annotation_level2.index, 'level2.group'] = annotation_level2['level2.group'].values
-query_cells = query_mdata.obs_names
-gdT_mask = (mdata.obs_names.isin(query_cells)) & (mdata.obs['gdT_gene_module_score'] > 0)
+query_cells_spikein = query_mdata.obs_names
+gdT_mask = (mdata.obs_names.isin(query_cells_spikein)) & (mdata.obs['gdT_gene_module_score'] > 0)
 mdata.obs.loc[gdT_mask, 'level1'] = "gdT"
 print("query gdT labelled cells")
 print(mdata.obs.loc[(mdata.obs_names.isin(query_cells)), 'level1'].value_counts())
@@ -471,8 +487,8 @@ print("Save umap.csv")
 #umap_df = pd.DataFrame(gdT_mdata.obsm['X_umap'], index = gdT_mdata.obs.index)
 ##umap_df.to_csv(prefix+"/umap_python.csv", index=True)
 
-print("Save Anndata")
-mdata.write_h5ad(prefix+"/adata_RNA.h5ad")
+#print("Save Anndata")
+#mdata.write_h5ad(prefix+"/adata_RNA.h5ad")
 
 ##mdata = AnnData.read(prefix+"_orig/adata_RNA.h5ad")
 ##latent_df = pd.read_csv(prefix+"_orig/latent.csv", index_col=0)
@@ -711,8 +727,10 @@ for annot in groups:
 ##output_file.index = mdata.obs.index.copy()
 ##output_file.to_csv(prefix+"/output_annotations.csv", index=True)
 output_file.to_csv(prefix+"/predictions_output_file.csv", index=True)
-user_output_file = output_file.loc[query_mask, :]
-user_output_file.index = mdata.obs.loc[query_mask, :].index
+#user_output_file = output_file.loc[query_mask, :]
+#user_output_file.index = mdata.obs.loc[query_mask, :].index
+user_output_file = output_file.loc[output_file.index.isin(query_cells), :]
+user_output_file.index = mdata.obs.loc[output_file.index.isin(query_cells), :].index
 ##user_output_file = user_output_file[~user_output_file.index.str.contains("IGT")].copy()
 user_output_file.to_csv(prefix+"/user_predictions_output_file.csv", index=True)
 

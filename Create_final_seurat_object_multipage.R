@@ -64,15 +64,16 @@ read10x_flexible <- function(dir) {
   feat <- if ("features.tsv.gz" %in% files || "features.tsv" %in% files) {
     pick("features.tsv")
   } else {
-    pick("genes.tsv")
+    pick("gene.tsv")
   }
 
   library(Matrix)
   mat <- readMM(file.path(dir, mtx))
   barcodes <- read.delim(file.path(dir, bc), header = FALSE)
   features <- read.delim(file.path(dir, feat), header = FALSE)
+  features[, 1] <- make.unique(features[, 1])
 
-  rownames(mat) <- features[, 2]
+  rownames(mat) <- features[, 1]
   colnames(mat) <- barcodes[, 1]
 
   mat <- as(mat, "dgCMatrix")
@@ -80,7 +81,7 @@ read10x_flexible <- function(dir) {
 }
 
 files <- list.files(matrix_path)
-if (("barcodes.tsv.gz" %in% files | "cells.tsv.gz" %in% files)) {
+if (("features.tsv.gz" %in% files)) {
         matrix_in <- Read10X(matrix_path)
 } else {
         matrix_in <- read10x_flexible(matrix_path)
@@ -140,7 +141,7 @@ so <- so %>%
   FindClusters(resolution = c(0.1, 0.25, 0.4, 0.5, 0.75, 0.8, 1, 2, 3))
 
 so$RNA_clusters <- so@meta.data[, annotation]
-so$sample_name <- so@meta.data[, "IGTHT"]
+so$sample_name <- so@meta.data[, "IGT"]
 #so$sample_name <- so$batch_sample
 
 #colnames(so) <- paste0(EXP_name, ".", colnames(so))
@@ -460,9 +461,9 @@ overlapping_cells <- intersect(rownames(output_file_query), rownames(tmp@meta.da
 output_file_query$score_log <- NA
 output_file_query[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
 output_file_query$discovery <- output_file_query$score_log > log(2)
-final_output_file <- output_file_query[, c("level1_final", "level2_final", "confidence_score", "score_log", "discovery")]
-final_output_file$cellID <- rownames(final_output_file)
-colnames(final_output_file) <- c("cellID", "level1", "level2", "confidence_score", "score_log", "discovery")
+output_file_query$cellID <- rownames(output_file_query)
+final_output_file <- output_file_query[, c("cellID", "level1_final", "level2_final", "confidence_score", "score_log", "discovery")]
+colnames(final_output_file) <- c("cellID", "level1", "level2", "confidence_score", "discovery_score", "discovery")
 write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = T, col.names = T, quote = F)
 
 MDE_save <- sort(unique(output_file_query$level1_final))
