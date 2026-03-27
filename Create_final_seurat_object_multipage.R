@@ -64,7 +64,7 @@ read10x_flexible <- function(dir) {
   feat <- if ("features.tsv.gz" %in% files || "features.tsv" %in% files) {
     pick("features.tsv")
   } else {
-    pick("gene.tsv")
+    pick("genes.tsv")
   }
 
   library(Matrix)
