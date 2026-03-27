@@ -357,7 +357,7 @@ while ((percentage > 1) and (difference > 1.5)):
               )
   else:
       level1_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "not classified", labels_key="level1_abT")
-      level1_model_abT.train(30, train_size=0.9,batch_size=128, validation_size=0.1)
+      level1_model_abT.train(30, train_size=0.9,batch_size=128, validation_size=0.1, datasplitter_kwargs={"drop_last": True})
       #level1_model_abT.save(prefix+"/abT_scanvi_level1_model/", save_anndata=True)
   
   #level1_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "not classified", labels_key="level1_abT")
@@ -390,7 +390,7 @@ while ((percentage > 1) and (difference > 1.5)):
       labels_key="level2_abT"
   )
   level2_model_abT = scvi.model.SCANVI.from_scvi_model(scvi_model_abT, "not classified", labels_key="level2_abT")
-  level2_model_abT.train(30, train_size=1.0, validation_size=0)
+  level2_model_abT.train(30, train_size=0.9, validation_size=0.1, batch_size=128, datasplitter_kwargs={"drop_last": True})
   #level2_model_abT.save(prefix+"/abT_scanvi_level2_model/", save_anndata=True)
   #level2_model_abT = scvi.model.SCANVI.load(prefix+"/abT_scanvi_level2_model/", adata=abT_mdata)
   
@@ -430,7 +430,7 @@ while ((percentage > 1) and (difference > 1.5)):
           print("Skipping gdT SCANVI: <2 labeled cells")
       else:
           level2_model_gdT = scvi.model.SCANVI.from_scvi_model(scvi_model_gdT, "not classified",labels_key="level2_gdT")
-          level2_model_gdT.train(30, train_size=0.9, validation_size=0.1)
+          level2_model_gdT.train(30, train_size=0.9, validation_size=0.1, batch_size=128, datasplitter_kwargs={"drop_last": True})
       #level2_model_gdT = scvi.model.SCANVI.from_scvi_model(scvi_model_gdT, "not classified", labels_key="level2_gdT")
       #level2_model_gdT.train(30, train_size=1.0, validation_size=0)
       #level2_model_gdT.save(prefix+"/gdT_scanvi_level2_model/", save_anndata=True)
