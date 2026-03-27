@@ -720,7 +720,7 @@ groups = [g for g in groups if g not in ["unclear", "nonT", "remove"]]
   
 for annot in groups:
   mask1 = (output_file["level1_final"] == "not classified") & (output_file["level2_final"] == annot)
-  output_file.loc[mask1, "level1_final"] = annot.split("_")[0]
+  output_file.loc[mask1, "level1_final"] = annot.split(".")[0]
 
 ## Save user annotations to return to the user
 ##output_file = mdata.obs[['level1_transfer_labels','level2_transfer_labels']] #,'level2.group_transfer_labels']]
