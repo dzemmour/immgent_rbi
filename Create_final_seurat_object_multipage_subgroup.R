@@ -92,20 +92,31 @@ if (("features.tsv.gz" %in% files)) {
 #matrix_in <- read10x_flexible(matrix_path)
 so <- CreateSeuratObject(matrix_in)
 so[['RNA']] <- CreateAssayObject(so@assays$RNA$counts)
-colnames(so) <- gsub("-1", "", colnames(so))
+#colnames(so) <- gsub("-1", "", colnames(so))
 
 
 query_all_metadata <- read.csv(query_all_metadata, row.names = 1)
-rownames(query_all_metadata) <- gsub("-1", "", rownames(query_all_metadata))
+#rownames(query_all_metadata) <- gsub("-1", "", rownames(query_all_metadata))
 output_file_query <- read.csv(output_file_query, row.names = 1)
-rownames(output_file_query) <- gsub("-1", "", rownames(output_file_query))
+#rownames(output_file_query) <- gsub("-1", "", rownames(output_file_query))
+mde_incremental <- read.csv(mde_incremental_path, row.names = 1)
+#rownames(mde_incremental) <- paste0(rownames(mde_incremental), "-1")
 
 #mypal_annotation <- setNames(c(mypal,mypal)[1:length(unique(query_all_metadata[, annotation]))], unique(query_all_metadata[, annotation]))
 
 joint.bcs = intersect(rownames(query_all_metadata), rownames(output_file_query))
+print(length(joint.bcs))
+joint.bcs = intersect(joint.bcs, rownames(mde_incremental))
+print(length(joint.bcs))
 query_all_metadata <- query_all_metadata[joint.bcs, ]
 #output_file <- output_file[joint.bcs, ]
 output_file_query <- output_file_query[joint.bcs, ]
+#mde_incremental <- read.csv(mde_incremental_path, row.names = 1)
+#rownames(mde_incremental) <- paste0(rownames(mde_incremental), "-1")
+mde_incremental <- mde_incremental[joint.bcs, ]
+colnames(mde_incremental) <- c("level2_MDE1", "level2_MDE2")
+write.csv(mde_incremental, paste0(prefix, "/", subgroup, "_mde.csv"), row.names = T, quote = F)
+
 
 #annotation_conversion <- read.csv("/n/groups/cbdm_lab/odc180/ImmgenT_workshop/ImmgenT_freeze_20250109/new_annotations/annotation_table_20260201_conversion_May_to_now.csv")
 ##View(so@meta.data)
@@ -116,11 +127,11 @@ output_file_query <- output_file_query[joint.bcs, ]
 #  #so@meta.data$level1_final[output_file_query$level2_final == old_cluster] <- new_level1
 #}
 
-mde_incremental <- read.csv(mde_incremental_path, row.names = 1)
-rownames(mde_incremental) <- paste0(rownames(mde_incremental), "-1")
-mde_incremental <- mde_incremental[joint.bcs, ]
-colnames(mde_incremental) <- c("level2_MDE1", "level2_MDE2")
-write.csv(mde_incremental, paste0(prefix, "/", subgroup, "_mde.csv"), row.names = T, quote = F)
+#mde_incremental <- read.csv(mde_incremental_path, row.names = 1)
+#rownames(mde_incremental) <- paste0(rownames(mde_incremental), "-1")
+#mde_incremental <- mde_incremental[rownames(mde_incremental) %in% joint.bcs, ]
+#colnames(mde_incremental) <- c("level2_MDE1", "level2_MDE2")
+#write.csv(mde_incremental, paste0(prefix, "/", subgroup, "_mde.csv"), row.names = T, quote = F)
 #joint.bcs <- intersect(rownames(output_file), rownames(mde_incremental))
 #output_file[joint.bcs, "level2_MDE1"] <- mde_incremental[joint.bcs, "level2_MDE1"]
 #output_file[joint.bcs, "level2_MDE2"] <- mde_incremental[joint.bcs, "level2_MDE2"]
@@ -301,21 +312,23 @@ scores_tbl_list2[["dataset"]] = scores_tbl
 tmp$score_log = NA
 tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
 tmp$discovery = tmp$score_log > log(2)
+tmp$ratio = scores_tbl$ratio[match(colnames(tmp), rownames(scores_tbl))]
 
 discovery_score_allT <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = level2_MDE1, y = level2_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
-  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = level2_MDE1, y = level2_MDE2, colour = score_log)) +
-  theme_classic() + scale_colour_gradient2(low = "black", mid = "white",high = "red", midpoint = 0) +
+  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$ratio), ], mapping = aes(x = level2_MDE1, y = level2_MDE2, colour = ratio)) +
+  theme_classic() + scale_colour_gradient2(low = "black", mid = "white",high = "red", midpoint = 5, limits = c(0,10)) +
   theme(
     axis.title = element_blank(),
     plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(min(mde$level2_MDE1), max(mde$level2_MDE1)) + ylim(min(mde$level2_MDE2), max(mde$level2_MDE2))
 
-discovery_score <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = level2_MDE1, y = level2_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
-  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = level2_MDE1, y = level2_MDE2, colour = discovery)) +
-  theme_classic() + scale_colour_manual(values = c("FALSE" = "Black", "TRUE" = "Red")) +
-  theme(
-    axis.title = element_blank(),
-    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(min(mde$level2_MDE1), max(mde$level2_MDE1)) + ylim(min(mde$level2_MDE2), max(mde$level2_MDE2))
+#discovery_score <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = level2_MDE1, y = level2_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
+#  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = level2_MDE1, y = level2_MDE2, colour = discovery)) +
+#  theme_classic() + scale_colour_manual(values = c("FALSE" = "Black", "TRUE" = "Red")) +
+#  theme(
+#    axis.title = element_blank(),
+#    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(min(mde$level2_MDE1), max(mde$level2_MDE1)) + ylim(min(mde$level2_MDE2), max(mde$level2_MDE2))
 
+discovery_score <- ggplot() + theme_void()
 
 pdf(paste0(prefix, "/TRBI.pdf"), height = 15, width = 15)
 ## page 1 - TRBI results
@@ -343,11 +356,14 @@ write.csv(percentages, paste0(prefix, "/percentages_final.csv"))
 
 metadata_plot$confidence_score <- metadata_plot$level2_scanvi_confidence
 overlapping_cells <- intersect(rownames(metadata_plot), rownames(tmp@meta.data))
-metadata_plot$score_log <- NA
-metadata_plot[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
-metadata_plot$discovery <- metadata_plot$score_log > log(2)
+#metadata_plot$score_log <- NA
+#metadata_plot[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
+#metadata_plot$discovery <- metadata_plot$score_log > log(2)
+metadata_plot$score <- NA
+metadata_plot[overlapping_cells, ]$score <- tmp@meta.data[overlapping_cells, ]$ratio
+metadata_plot$discovery <- metadata_plot$score> 2
 metadata_plot$cellID <- rownames(metadata_plot)
-final_output_file <- metadata_plot[, c("cellID", "level2_final", "confidence_score", "score_log", "discovery")]
+final_output_file <- metadata_plot[, c("cellID", "level2_final", "confidence_score", "score", "discovery")]
 colnames(final_output_file) <- c("cellID", "level2", "confidence_score", "discovery_score", "discovery")
 write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = F, col.names = T, quote = F)
 

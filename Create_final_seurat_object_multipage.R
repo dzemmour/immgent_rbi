@@ -284,21 +284,24 @@ scores_tbl_list2[["dataset"]] = scores_tbl
 tmp$score_log = NA
 tmp$score_log = scores_tbl$score_log[match(colnames(tmp), rownames(scores_tbl))]
 tmp$discovery = tmp$score_log > log(2)
+tmp$ratio = scores_tbl$ratio[match(colnames(tmp), rownames(scores_tbl))]
 
 discovery_score_allT <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
-  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = score_log)) + 
-  theme_classic() + scale_colour_gradient2(low = "black", mid = "white",high = "red", midpoint = 0) + 
+  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$ratio), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = ratio)) + 
+  theme_classic() + scale_colour_gradient2(low = "black", mid = "white",high = "red", midpoint = 5, limits = c(0,10)) + 
   theme(
     axis.title = element_blank(), 
     plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
 
-discovery_score <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
-  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = discovery)) + 
-  theme_classic() + scale_colour_manual(values = c("FALSE" = "Black", "TRUE" = "Red")) + 
-  theme(
-    axis.title = element_blank(), 
-    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
+#discovery_score <-  ggplot() + geom_scattermore(data = mde, mapping = aes(x = allT_MDE1, y = allT_MDE2), colour = "gray", size = 1/log10(ncells_plotted+1))  +
+#  geom_point(data = tmp@meta.data[!is.na(tmp@meta.data$score_log), ], mapping = aes(x = allT_MDE1, y = allT_MDE2, colour = discovery)) + 
+#  theme_classic() + scale_colour_manual(values = c("FALSE" = "Black", "TRUE" = "Red")) + 
+#  theme(
+#    axis.title = element_blank(), 
+#    plot.title = element_text(size = 15)) + ggtitle('Query cells discovery score overlayed onto immgenT (grey)') + xlim(-2.5, 2.5) + ylim(-2.5, 2.5)
   
+discovery_score <- ggplot() + theme_void()
+
 pdf(paste0(prefix, "/TRBI.pdf"), height = 15, width = 15)
 ## Page 1 - scanvi distribution, allT immgenT, allT query sample
 p <- grid.arrange(grobs = plots[c(1, 3:4)], ncol = 2)
@@ -458,11 +461,14 @@ dev.off()
 
 output_file_query$confidence_score <- pmax(output_file_query$level1_scanvi_confidence, output_file_query$level2_scanvi_confidence, na.rm = F)
 overlapping_cells <- intersect(rownames(output_file_query), rownames(tmp@meta.data))
-output_file_query$score_log <- NA
-output_file_query[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
-output_file_query$discovery <- output_file_query$score_log > log(2)
+#output_file_query$score_log <- NA
+#output_file_query[overlapping_cells, ]$score_log <- tmp@meta.data[overlapping_cells, ]$score_log
+#output_file_query$discovery <- output_file_query$score_log > log(2)
+metadata_plot$score <- NA
+metadata_plot[overlapping_cells, ]$score <- tmp@meta.data[overlapping_cells, ]$ratio
+metadata_plot$discovery <- metadata_plot$score> 2
 output_file_query$cellID <- rownames(output_file_query)
-final_output_file <- output_file_query[, c("cellID", "level1_final", "level2_final", "confidence_score", "score_log", "discovery")]
+final_output_file <- output_file_query[, c("cellID", "level1_final", "level2_final", "confidence_score", "score", "discovery")]
 colnames(final_output_file) <- c("cellID", "level1", "level2", "confidence_score", "discovery_score", "discovery")
 write.csv(final_output_file, paste0(prefix, "/Final_user_output_file.csv"), row.names = T, col.names = T, quote = F)
 
