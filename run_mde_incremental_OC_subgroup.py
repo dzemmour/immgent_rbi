@@ -70,8 +70,8 @@ if torch.cuda.is_available():
 
 print("Reading integrated ref+query latent space")  
 totalvi_integrated = pd.read_csv(totalvi_integrated_file, index_col = 0, header = 0)
-totalvi_integrated.index = totalvi_integrated.index.str.replace('-0', '')
-totalvi_integrated.index = totalvi_integrated.index.str.replace('-1', '')
+#totalvi_integrated.index = totalvi_integrated.index.str.replace('-0', '')
+#totalvi_integrated.index = totalvi_integrated.index.str.replace('-1', '')
 
 print("anchor MDE")
 ##test dataset to troubleshoot
