@@ -280,13 +280,13 @@ non_Tcell_mask = (
 )
 
 cells_Tcell_score = mdata.obs.index[non_Tcell_mask]
-mdata = mdata[Tcell_mask, :].copy()
+#mdata = mdata[Tcell_mask, :].copy()
 
 print("save QC filtered cells (if any)")
 dfs = []
 
 if cells_Tcell_score is not None:
-    dfs.append(pd.DataFrame({"cell_id": cells_Tcell_score, "QC_filter": "non T cell"}))
+    #dfs.append(pd.DataFrame({"cell_id": cells_Tcell_score, "QC_filter": "non T cell"}))
 
 if cells_nGenes is not None:
     dfs.append(pd.DataFrame({"cell_id": cells_nGenes, "QC_filter": "low gene count"}))
