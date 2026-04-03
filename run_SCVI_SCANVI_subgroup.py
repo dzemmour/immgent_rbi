@@ -287,6 +287,8 @@ dfs = []
 
 if cells_Tcell_score is not None:
     #dfs.append(pd.DataFrame({"cell_id": cells_Tcell_score, "QC_filter": "non T cell"}))
+    print("no T cell filter")
+
 
 if cells_nGenes is not None:
     dfs.append(pd.DataFrame({"cell_id": cells_nGenes, "QC_filter": "low gene count"}))
